@@ -2,7 +2,7 @@
 
 ## Script de détection de conflits Revit
 
-Le fichier `revit_conflicts_viewer.py` est un script **pyRevit** qui permet de :
+Le fichier `revit_conflicts_viewer.py` est un script **pyRevit / Dynamo** qui permet de :
 
 - détecter les conflits géométriques entre **maquettes liées**,
 - générer une **vue 3D avec coupe (section box)** pour chaque conflit,
@@ -12,13 +12,13 @@ Le fichier `revit_conflicts_viewer.py` est un script **pyRevit** qui permet de :
 ## Pré-requis
 
 - Revit avec des maquettes liées chargées,
-- pyRevit installé,
-- script lancé dans un document hôte ouvert.
+- pyRevit ou Dynamo (Python 3) disponible,
+- script lancé dans un document hôte ouvert dans Revit.
 
 ## Utilisation
 
-1. Ajouter `revit_conflicts_viewer.py` dans une extension pyRevit.
-2. Lancer le script depuis le ruban pyRevit.
+1. Lancer `revit_conflicts_viewer.py` depuis une extension pyRevit **ou** un nœud Python Dynamo.
+2. Vérifier que le document actif contient des maquettes liées.
 3. Cliquer sur **Suivant/Précédent** pour parcourir les conflits.
 4. Cliquer sur **Ouvrir coupe** pour ouvrir la vue 3D dédiée au conflit sélectionné.
 

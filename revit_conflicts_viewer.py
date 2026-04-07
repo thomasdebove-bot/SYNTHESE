@@ -34,6 +34,7 @@ from System.Windows.Forms import (
 
 clr.AddReference("RevitAPI")
 clr.AddReference("RevitServices")
+from RevitServices.Persistence import DocumentManager
 
 from Autodesk.Revit.DB import (
     BoundingBoxXYZ,
@@ -55,9 +56,37 @@ from Autodesk.Revit.DB import (
     XYZ,
 )
 
+def get_revit_context():
+    """
+    Compatibilité pyRevit + Dynamo.
+    - pyRevit: utilise __revit__.ActiveUIDocument
+    - Dynamo: utilise DocumentManager.Instance.CurrentDBDocument
+    """
+    # pyRevit
+    try:
+        ui = __revit__.ActiveUIDocument  # noqa: F821 (variable injectée par pyRevit)
+        if ui and ui.Document:
+            return ui, ui.Document, "pyrevit"
+    except Exception:
+        pass
 
-uidoc = __revit__.ActiveUIDocument
-DOC = uidoc.Document
+    # Dynamo / RevitServices
+    try:
+        doc = DocumentManager.Instance.CurrentDBDocument
+        uiapp = DocumentManager.Instance.CurrentUIApplication
+        ui = uiapp.ActiveUIDocument if uiapp else None
+        if doc:
+            return ui, doc, "dynamo"
+    except Exception:
+        pass
+
+    raise Exception(
+        "Impossible de récupérer le contexte Revit. "
+        "Lancez ce script depuis pyRevit ou Dynamo dans Revit."
+    )
+
+
+uidoc, DOC, CONTEXT = get_revit_context()
 
 
 TARGET_CATEGORIES = [
@@ -384,7 +413,7 @@ class ClashBrowser(Form):
         self.refresh_details()
 
     def on_open_view(self, sender, event):
-        if not self.clashes:
+        if not self.clashes or self.uidoc is None:
             return
 
         clash = self.clashes[self.index]
@@ -407,9 +436,22 @@ def main():
         return
 
     MessageBox.Show("{} conflit(s) détecté(s).".format(len(clashes)))
+
+    if uidoc is None:
+        MessageBox.Show(
+            "Document UI indisponible: impossible d'ouvrir les vues automatiquement. "
+            "Exécutez dans une session Revit interactive."
+        )
+        return clashes
+
     form = ClashBrowser(DOC, uidoc, clashes)
     Application.Run(form)
+    return clashes
 
 
 if __name__ == "__main__":
-    main()
+    result = main()
+    try:
+        OUT = result  # Dynamo: exposer le résultat en sortie de node.
+    except Exception:
+        pass
