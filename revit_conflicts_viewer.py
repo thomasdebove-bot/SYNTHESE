@@ -224,7 +224,7 @@ def detect_clashes(doc):
     """Détecte les conflits entre maquettes liées."""
     links = list(FilteredElementCollector(doc).OfClass(RevitLinkInstance))
     if len(links) < 2:
-        return []
+        return [], {"boolean_failures": 0}
 
     link_data = []
     for li in links:
@@ -235,6 +235,7 @@ def detect_clashes(doc):
 
     clashes = []
     checked_pairs = set()
+    boolean_failures = 0
 
     for i in range(len(link_data)):
         inst_a, doc_a, trf_a = link_data[i]
@@ -288,9 +289,15 @@ def detect_clashes(doc):
                         continue
 
                     tsb = SolidUtils.CreateTransformed(sb, trf_b)
-                    inter = BooleanOperationsUtils.ExecuteBooleanOperation(
-                        tsa, tsb, BooleanOperationsType.Intersect
-                    )
+                    try:
+                        inter = BooleanOperationsUtils.ExecuteBooleanOperation(
+                            tsa, tsb, BooleanOperationsType.Intersect
+                        )
+                    except Exception:
+                        # Certains solides Revit sont invalides pour le booléen.
+                        # On ignore la paire et on poursuit l'analyse globale.
+                        boolean_failures += 1
+                        continue
 
                     if inter and inter.Volume > 0.0001:
                         bb = inter.GetBoundingBox()
@@ -317,7 +324,7 @@ def detect_clashes(doc):
                             }
                         )
 
-    return clashes
+    return clashes, {"boolean_failures": boolean_failures}
 
 
 class ClashBrowser(Form):
@@ -437,24 +444,28 @@ class ClashBrowser(Form):
 
 
 def main():
-    clashes = detect_clashes(DOC)
+    clashes, stats = detect_clashes(DOC)
+    failures = stats.get("boolean_failures", 0)
+    warn = " ({} paires ignorées: booléen impossible)".format(failures) if failures else ""
 
     if not clashes:
         return {
             "status": "no_clash",
-            "message": "Aucun conflit trouvé entre les maquettes liées.",
+            "message": "Aucun conflit trouvé entre les maquettes liées." + warn,
             "count": 0,
             "clashes": [],
             "context": CONTEXT,
+            "stats": stats,
         }
 
     if uidoc is None:
         return {
             "status": "ok_no_ui",
-            "message": "Conflits détectés, mais UI indisponible (session non interactive).",
+            "message": "Conflits détectés, mais UI indisponible (session non interactive)." + warn,
             "count": len(clashes),
             "clashes": clashes,
             "context": CONTEXT,
+            "stats": stats,
         }
 
     form = ClashBrowser(DOC, uidoc, clashes)
@@ -462,10 +473,11 @@ def main():
     form.ShowDialog()
     return {
         "status": "ok",
-        "message": "{} conflit(s) détecté(s).".format(len(clashes)),
+        "message": "{} conflit(s) détecté(s).".format(len(clashes)) + warn,
         "count": len(clashes),
         "clashes": clashes,
         "context": CONTEXT,
+        "stats": stats,
     }
 
 
