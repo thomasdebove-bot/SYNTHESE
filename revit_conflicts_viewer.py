@@ -21,7 +21,6 @@ clr.AddReference("System.Drawing")
 
 from System.Drawing import Point, Size
 from System.Windows.Forms import (
-    Application,
     Button,
     DataGridView,
     DataGridViewAutoSizeColumnsMode,
@@ -432,26 +431,43 @@ def main():
     clashes = detect_clashes(DOC)
 
     if not clashes:
-        MessageBox.Show("Aucun conflit trouvé entre les maquettes liées.")
-        return
-
-    MessageBox.Show("{} conflit(s) détecté(s).".format(len(clashes)))
+        return {
+            "status": "no_clash",
+            "message": "Aucun conflit trouvé entre les maquettes liées.",
+            "count": 0,
+            "clashes": [],
+            "context": CONTEXT,
+        }
 
     if uidoc is None:
-        MessageBox.Show(
-            "Document UI indisponible: impossible d'ouvrir les vues automatiquement. "
-            "Exécutez dans une session Revit interactive."
-        )
-        return clashes
+        return {
+            "status": "ok_no_ui",
+            "message": "Conflits détectés, mais UI indisponible (session non interactive).",
+            "count": len(clashes),
+            "clashes": clashes,
+            "context": CONTEXT,
+        }
 
     form = ClashBrowser(DOC, uidoc, clashes)
-    Application.Run(form)
-    return clashes
+    # ShowDialog fonctionne mieux que Application.Run dans Dynamo/Revit déjà interactif.
+    form.ShowDialog()
+    return {
+        "status": "ok",
+        "message": "{} conflit(s) détecté(s).".format(len(clashes)),
+        "count": len(clashes),
+        "clashes": clashes,
+        "context": CONTEXT,
+    }
 
 
-if __name__ == "__main__":
-    result = main()
+# Exécuter automatiquement (pyRevit et Dynamo).
+try:
+    RESULT = main()
+except Exception as ex:
+    RESULT = {"status": "error", "message": str(ex), "count": 0, "clashes": [], "context": None}
     try:
-        OUT = result  # Dynamo: exposer le résultat en sortie de node.
+        MessageBox.Show("Erreur script conflit Revit:\n{}".format(ex))
     except Exception:
         pass
+
+OUT = RESULT

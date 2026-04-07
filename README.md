@@ -21,6 +21,7 @@ Le fichier `revit_conflicts_viewer.py` est un script **pyRevit / Dynamo** qui pe
 2. Vérifier que le document actif contient des maquettes liées.
 3. Cliquer sur **Suivant/Précédent** pour parcourir les conflits.
 4. Cliquer sur **Ouvrir coupe** pour ouvrir la vue 3D dédiée au conflit sélectionné.
+5. En Dynamo, le script s'exécute automatiquement et renvoie un objet de résultat dans `OUT` (`status`, `count`, `clashes`, `message`).
 
 ## Notes
 
