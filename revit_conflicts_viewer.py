@@ -136,6 +136,15 @@ def transformed_outline(solid, trf):
     return Outline(min_pt, max_pt)
 
 
+def midpoint_xyz(a, b):
+    """Calcule le milieu entre 2 XYZ sans opérateurs Python (+, /) non supportés partout."""
+    return XYZ(
+        (a.X + b.X) / 2.0,
+        (a.Y + b.Y) / 2.0,
+        (a.Z + b.Z) / 2.0,
+    )
+
+
 def get_workaround_suggestion(cat_a, cat_b):
     """Suggestions métiers basées sur le couple de catégories."""
     key = tuple(sorted([cat_a, cat_b]))
@@ -285,7 +294,7 @@ def detect_clashes(doc):
 
                     if inter and inter.Volume > 0.0001:
                         bb = inter.GetBoundingBox()
-                        center = (bb.Min + bb.Max) / 2.0
+                        center = midpoint_xyz(bb.Min, bb.Max)
                         size_x = abs(bb.Max.X - bb.Min.X)
                         size_y = abs(bb.Max.Y - bb.Min.Y)
                         size_z = abs(bb.Max.Z - bb.Min.Z)
