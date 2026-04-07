@@ -41,6 +41,7 @@ from Autodesk.Revit.DB import (
     BooleanOperationsUtils,
     BuiltInCategory,
     FilteredElementCollector,
+    Level,
     Options,
     Outline,
     RevitLinkInstance,
@@ -102,6 +103,19 @@ TARGET_CATEGORIES = [
 ]
 
 
+def get_selected_level_name_from_input():
+    """
+    Dynamo: utilise IN[0] comme nom de niveau (ex: \"Level 2\").
+    pyRevit: retourne None (pas d'entrée IN).
+    """
+    try:
+        if IN and len(IN) > 0 and IN[0]:  # noqa: F821 (injecté par Dynamo)
+            return str(IN[0]).strip()
+    except Exception:
+        pass
+    return None
+
+
 def get_solid_from_element(element):
     """Retourne le plus grand solide valide trouvé dans la géométrie de l'élément."""
     opts = Options()
@@ -143,6 +157,41 @@ def midpoint_xyz(a, b):
         (a.Y + b.Y) / 2.0,
         (a.Z + b.Z) / 2.0,
     )
+
+
+def find_level_by_name(doc, level_name):
+    if not level_name:
+        return None
+    lname = level_name.strip().lower()
+    levels = FilteredElementCollector(doc).OfClass(Level).ToElements()
+    for lvl in levels:
+        if lvl.Name and lvl.Name.strip().lower() == lname:
+            return lvl
+    return None
+
+
+def element_matches_level(element, level_obj, z_tolerance=3.0):
+    """Filtre un élément sur un niveau cible (tolérance en pieds)."""
+    if level_obj is None:
+        return True
+
+    try:
+        if element.LevelId and element.LevelId.IntegerValue == level_obj.Id.IntegerValue:
+            return True
+    except Exception:
+        pass
+
+    bb = None
+    try:
+        bb = element.get_BoundingBox(None)
+    except Exception:
+        bb = None
+
+    if bb is None:
+        return False
+
+    z = level_obj.Elevation
+    return (bb.Min.Z - z_tolerance) <= z <= (bb.Max.Z + z_tolerance)
 
 
 def get_workaround_suggestion(cat_a, cat_b):
@@ -220,11 +269,11 @@ def create_section_view_for_conflict(doc, base_view, clash, idx):
     return new_view
 
 
-def detect_clashes(doc):
+def detect_clashes(doc, level_name=None):
     """Détecte les conflits entre maquettes liées."""
     links = list(FilteredElementCollector(doc).OfClass(RevitLinkInstance))
     if len(links) < 2:
-        return [], {"boolean_failures": 0}
+        return [], {"boolean_failures": 0, "level_filter": level_name, "filtered_links": 0}
 
     link_data = []
     for li in links:
@@ -236,19 +285,22 @@ def detect_clashes(doc):
     clashes = []
     checked_pairs = set()
     boolean_failures = 0
+    level_filter_hits = 0
 
     for i in range(len(link_data)):
         inst_a, doc_a, trf_a = link_data[i]
+        level_a = find_level_by_name(doc_a, level_name) if level_name else None
         elems_a = []
         for bic in TARGET_CATEGORIES:
-            elems_a.extend(
-                list(
-                    FilteredElementCollector(doc_a)
-                    .OfCategory(bic)
-                    .WhereElementIsNotElementType()
-                    .ToElements()
-                )
+            cat_elems = (
+                FilteredElementCollector(doc_a)
+                .OfCategory(bic)
+                .WhereElementIsNotElementType()
+                .ToElements()
             )
+            for e in cat_elems:
+                if element_matches_level(e, level_a):
+                    elems_a.append(e)
 
         for j in range(i + 1, len(link_data)):
             inst_b, doc_b, trf_b = link_data[j]
@@ -258,16 +310,24 @@ def detect_clashes(doc):
                 continue
             checked_pairs.add(pair_key)
 
+            level_b = find_level_by_name(doc_b, level_name) if level_name else None
             elems_b = []
             for bic in TARGET_CATEGORIES:
-                elems_b.extend(
-                    list(
-                        FilteredElementCollector(doc_b)
-                        .OfCategory(bic)
-                        .WhereElementIsNotElementType()
-                        .ToElements()
-                    )
+                cat_elems = (
+                    FilteredElementCollector(doc_b)
+                    .OfCategory(bic)
+                    .WhereElementIsNotElementType()
+                    .ToElements()
                 )
+                for e in cat_elems:
+                    if element_matches_level(e, level_b):
+                        elems_b.append(e)
+
+            if level_name:
+                if level_a is not None:
+                    level_filter_hits += 1
+                if level_b is not None:
+                    level_filter_hits += 1
 
             solids_b = []
             for eb in elems_b:
@@ -324,7 +384,11 @@ def detect_clashes(doc):
                             }
                         )
 
-    return clashes, {"boolean_failures": boolean_failures}
+    return clashes, {
+        "boolean_failures": boolean_failures,
+        "level_filter": level_name,
+        "filtered_links": level_filter_hits,
+    }
 
 
 class ClashBrowser(Form):
@@ -444,7 +508,8 @@ class ClashBrowser(Form):
 
 
 def main():
-    clashes, stats = detect_clashes(DOC)
+    level_name = get_selected_level_name_from_input()
+    clashes, stats = detect_clashes(DOC, level_name=level_name)
     failures = stats.get("boolean_failures", 0)
     warn = " ({} paires ignorées: booléen impossible)".format(failures) if failures else ""
 
